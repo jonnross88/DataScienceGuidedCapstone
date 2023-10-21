@@ -1,0 +1,14 @@
+pandas
+ipykernel
+jupyter
+matplotlib
+jupyterlab
+jupyter-bokeh
+scikit-learn
+scipy
+seaborn
+holoviews
+bokeh
+panel
+lxml
+hvplot

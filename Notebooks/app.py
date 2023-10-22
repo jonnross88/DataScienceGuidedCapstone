@@ -6,11 +6,11 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn import __version__ as sklearn_version
 from sklearn.model_selection import cross_validate
-
 import panel as pn
 from panel import widgets as pnw
 from bokeh.models import NumeralTickFormatter
-import hvplot.pandas
+import hvplot.pandas  # noqa
+import holoviews as hv
 
 # throttle the panel widgets to prevent too many events
 pn.config.throttled = True
@@ -22,6 +22,8 @@ pn.extension(sizing_mode="stretch_width")
 acc_color = "#001b30"
 minor_color = "#b0b2b8"
 highlight_color = "#254928"
+color3 = "#76a8d9"
+
 
 expected_model_version = "1.0"
 model_path = "./models/ski_resort_pricing_model.pkl"
@@ -83,6 +85,22 @@ def predict_increase(features, deltas):
     return model.predict(bm2).item() - model.predict(X_bm).item()
 
 
+def format_M(num):
+    if abs(num) >= 1_000_000:
+        return f"{num/1000000:.1f}M"
+    else:
+        return f"{num:.1f}"
+
+
+def hook(plot, element):
+    plot.handles["xaxis"].major_tick_line_color = None
+    plot.handles["yaxis"].major_tick_line_color = None
+    plot.handles["xaxis"].minor_tick_line_color = None
+    plot.handles["yaxis"].minor_tick_line_color = None
+    plot.handles["xaxis"].axis_line_color = None
+    plot.handles["yaxis"].axis_line_color = None
+
+
 # Some default values for the widgets
 base_price, last_year_n_guests, last_year_n_days = 81, 350_000, 5
 last_year_revenue = base_price * last_year_n_guests * last_year_n_days
@@ -132,6 +150,7 @@ def predicted_increase(
     delta_SnowMaking_ac,
     delta_longest_run,
 ):
+    """Returns the predicted increase in ticket price based on the feature changes"""
     features = [
         "vertical_drop",
         "Runs",
@@ -154,50 +173,71 @@ def predicted_increase(
 
 # create separate function for last year comparison
 def last_year_comparison(n_guests, n_days, ticket_change):
+    """Returns a panel Markdown element of the predicted price and last year comparison"""
     new_price = base_price + ticket_change
-    revenue_change = (new_price * n_guests * n_days) - last_year_revenue
+    new_revenue = new_price * n_guests * n_days
+    revenue_change = new_revenue - last_year_revenue
 
     ticket_color = "darkred" if ticket_change < 0 else minor_color
     revenue_color = "darkred" if revenue_change < 0 else minor_color
 
-    return pn.pane.Markdown(
-        f"""
-        ## Model's  relative price shift:
-        ### Predicted Δ ticket price: <span style="color:{ticket_color}">${ticket_change:.2f}<span>
-        ### Predicted Δ ticket revenue: <span style="color:{revenue_color}">${revenue_change:,.0f}<span>
-        
-        ## Calculations based on:
-        ### Assumed new ticket price: <span style="color:{ticket_color}">${new_price:.2f}<span>
-        ### Estimated number of guests: <span style="color:{ticket_color}">{n_guests:,.0f}<span> guests
-        ### Estimated avg. length of stay: <span style="color:{ticket_color}">{n_days:,.0f} <span> days 
-        ## Last year's for reference:
-        ### Last year's ticket revenue: <span style="color:{ticket_color}">${last_year_revenue:,.0f}<span>
+    return pn.Row(
+        pn.pane.Markdown(
+            f"""
+        ## Model's relative price shift:
+        ### Predicted Δ ticket price:
+        # <span style="color:{ticket_color}">${ticket_change:.2f}<span>
+        ### Predicted Δ ticket revenue: 
+        # <span style="color:{revenue_color}">${format_M(revenue_change)}<span>
+        ### Predicted ticket revenue: 
+        # <span style="color:{revenue_color}">${format_M(new_revenue)}<span>
         """
+        ),
+        pn.pane.Markdown(
+            f"""
+        ## Calculations based on:
+        #### Assumed new ticket price:
+        ### <span style="color:{ticket_color}">${new_price:.2f}<span>
+        #### Estimated number of guests:
+        ### <span style="color:{ticket_color}">{n_guests:,.0f}<span> guests
+        #### Estimated avg. length of stay: 
+        ### <span style="color:{ticket_color}">{n_days:,.0f} <span> days 
+        ## Last year's for reference:
+        ### Last year's ticket price:
+        ### <span style="color:{ticket_color}">${base_price:.2f}<span>
+        ### Last year's ticket revenue:
+        ### <span style="color:{ticket_color}">${format_M(last_year_revenue)}<span>
+        """
+        ),
     )
 
 
 # get df of last year comparison
 def get_revenue_df(n_guests, n_days, ticket_change):
+    """Get a dataframe of last year's revenue and predicted revenue"""
     new_price = base_price + ticket_change
     predicted_revenue = new_price * n_guests * n_days
-    revenue_change = predicted_revenue - last_year_revenue
+    # revenue_change = predicted_revenue - last_year_revenue
 
     revenue_df = pd.DataFrame(
         {
-            "revenue_last_year": [last_year_revenue],
-            "predicted_revenue": [predicted_revenue],
+            "Last Year": [last_year_revenue],
+            "Predicted": [predicted_revenue],
         },
         index=["revenue"]
-        # orient="index",
+        # orient="columns", columns=["revenue_last_year", "predicted_revenue"]
     )
     return revenue_df
 
 
 # define function to plot barh on a panel
-def barh_callback(df):
+def barh_callback(df: pd.DataFrame):
+    """Returns a hvplot barh element of the revenue comparison dataframe"""
     # create a color column with the color minor color if the value is negative
     dataframe = pd.DataFrame()
+
     dataframe = df.copy()
+
     bar_color = (
         "darkred"
         if (
@@ -207,17 +247,55 @@ def barh_callback(df):
         else minor_color
     )
 
-    return dataframe.hvplot.barh(
+    bars = hv.Bars(dataframe)
+    bars[["revenue_last_year", "predicted_revenue"]]
+    bars.redim.label(revenue_last_year="Last Year", predicted_revenue="Predicted")
+    return bars[["revenue_last_year", "predicted_revenue"]].opts(
+        # return dataframe.hvplot.barh(
         title="Revenue Comparison",
-        xlabel="",
+        # xlabel="",
         ylabel="",
-        c=bar_color,
+        color=bar_color,
         # height=200,
         tools=["hover"],
         yticks=None,
-        yaxis="bare",
-        xformatter=NumeralTickFormatter(format="$ 0.00 a"),
+        # yaxis="bare",
+        yformatter=NumeralTickFormatter(format="$ 0.0 a"),
+        toolbar=None,
     )
+
+
+def hbar_callback(df):
+    # create a color column with the color minor color if the value is negative
+    dataframe = pd.DataFrame()
+    dataframe = df.copy()
+    bar_color = (
+        "darkred"
+        if (dataframe["Predicted"].iloc[0] < dataframe["Last Year"].iloc[0])
+        else color3
+    )
+
+    dataframe = dataframe.T.reset_index()
+    bars = hv.Bars(dataframe, ["index"], vdims=["revenue"]).opts(
+        title="Revenue Comparison",
+        color=bar_color,
+        xlabel="",
+        ylabel="",
+        invert_axes=True,
+        tools=["hover"],
+        toolbar="above",
+        xticks=4,
+        ylim=(0, 220_000_000),
+        xformatter=NumeralTickFormatter(format="$ 0.0 a"),
+        hooks=[hook],
+        fontsize={
+            "title": "16pt",
+            "labels": "12pt",
+            "xticks": "10pt",
+            "yticks": "10pt",
+        },
+    )
+    return bars
 
 
 # create a reactive function to output the predicted price and lasr year comparison
@@ -239,10 +317,14 @@ reactive_revenue_df = pn.bind(
 )
 reactive_barh = pn.bind(barh_callback, reactive_revenue_df)
 
+reactive_hbar = pn.bind(hbar_callback, reactive_revenue_df)
+
+
 reactive_panel = pn.Column(
     # reactive_predicted_increase,
     reactive_last_year_comparison,
-    reactive_barh,
+    # reactive_barh,
+    reactive_hbar,
 )
 
 
@@ -270,8 +352,8 @@ sidebar_widgets = [
 ]
 
 
-app = pn.template.FastListTemplate(
-    title="# Big Mountain Resort Lift Ticket Price Increase Estimator",
+bmr_app = pn.template.FastListTemplate(
+    title=f"BMR: Δ TICKET PRICE MODEL",
     sidebar=sidebar_widgets,
     header_color=acc_color,
     accent_base_color=acc_color,
@@ -279,6 +361,6 @@ app = pn.template.FastListTemplate(
     logo=logo_path,
 )
 
-app.main.append(reactive_panel)
+bmr_app.main.append(reactive_panel)
 
-pn.serve(app)
+bmr_app.servable()

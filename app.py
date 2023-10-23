@@ -1,16 +1,16 @@
-import pandas as pd
-import numpy as np
-import os
+# import os
 import pickle
-import matplotlib.pyplot as plt
-import seaborn as sns
-from sklearn import __version__ as sklearn_version
-from sklearn.model_selection import cross_validate
-import panel as pn
-from panel import widgets as pnw
+from urllib.request import urlopen
 from bokeh.models import NumeralTickFormatter
 import hvplot.pandas  # noqa
 import holoviews as hv
+
+import pandas as pd
+from panel import widgets as pnw
+
+from sklearn import __version__ as sklearn_version
+from sklearn.model_selection import cross_validate
+import panel as pn
 
 # throttle the panel widgets to prevent too many events
 pn.config.throttled = True
@@ -26,26 +26,35 @@ color3 = "#76a8d9"
 
 
 expected_model_version = "1.0"
-model_path = "./models/ski_resort_pricing_model.pkl"
+# model_path = "./models/ski_resort_pricing_model.pkl"
+# ski_data = pd.read_csv("./data/ski_data_step3_features.csv")
 
-try:
-    with open(model_path, "rb") as f:
-        model = pickle.load(f)
+
+def get_model(web_url):
+    """Get the model from the web_url and return the model object."""
+
+    response = urlopen(web_url)
+    if response.status == 200:
+        print("Model found, loading model...")
+        model = pickle.load(response)
         if model.version != expected_model_version:
             print("Expected model version doesn't match version loaded")
         if model.sklearn_version != sklearn_version:
             print("Warning: model created under different sklearn version")
-except FileNotFoundError:
-    print("Expected model not found. Check path.")
 
-# if os.path.exists(model_path):
-#     with open(model_path, "rb") as f:
-#         model = pickle.load(f)
-# else:
-#     print("Expected model not found")
+        return model
+    print("Model not found")
+    return None
 
 
-ski_data = pd.read_csv("./data/ski_data_step3_features.csv")
+# get model and data
+model = get_model(
+    "https://storage.googleapis.com/big_mountain_resort/ski_resort_pricing_model.pkl"
+)
+ski_data = pd.read_csv(
+    "https://storage.googleapis.com/big_mountain_resort/ski_data_step3_features.csv"
+)
+
 
 # Drop the extra feature added from last notebook
 ski_data = ski_data.drop(columns="log_total_chairs_runs_prod")

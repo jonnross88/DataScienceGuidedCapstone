@@ -23,6 +23,7 @@ acc_color = "#001b30"
 minor_color = "#b0b2b8"
 highlight_color = "#254928"
 color3 = "#76a8d9"
+neg_color = "#ffa500"
 
 
 expected_model_version = "1.0"
@@ -30,7 +31,8 @@ expected_model_version = "1.0"
 # ski_data = pd.read_csv("./data/ski_data_step3_features.csv")
 
 
-def get_model(web_url):
+@pn.cache(per_session=True)
+def fetch_model(web_url):
     """Get the model from the web_url and return the model object."""
 
     response = urlopen(web_url)
@@ -47,23 +49,33 @@ def get_model(web_url):
     return None
 
 
-# get model and data
-model = get_model(
+@pn.cache(per_session=True)
+def fetch_data(web_url):
+    """gets the dataframe from the web_url and returns the dataframe object."""
+    return pd.read_csv(web_url)
+
+
+model_url = (
     "https://storage.googleapis.com/big_mountain_resort/ski_resort_pricing_model.pkl"
 )
-ski_data = pd.read_csv(
+data_url = (
     "https://storage.googleapis.com/big_mountain_resort/ski_data_step3_features.csv"
 )
 
 
-# Drop the extra feature added from last notebook
+# get model and data
+model = fetch_model(model_url)
+ski_data = fetch_data(data_url)
+
+
+# Drop the extra feature added from notebook
 ski_data = ski_data.drop(columns="log_total_chairs_runs_prod")
 # isolate the target variable
 big_mountain = ski_data[ski_data.Name == "Big Mountain Resort"]
 
 X = ski_data.loc[ski_data.Name != "Big Mountain Resort", model.X_columns]
 y = ski_data.loc[ski_data.Name != "Big Mountain Resort", "AdultWeekend"]
-
+# fit model
 model.fit(X, y)
 
 cv_results = cross_validate(
@@ -98,7 +110,7 @@ def format_M(num):
     if abs(num) >= 1_000_000:
         return f"{num/1000000:.1f}M"
     else:
-        return f"{num:.1f}"
+        return f"{num:,.1f}"
 
 
 def hook(plot, element):
@@ -118,10 +130,10 @@ widget_height = 60
 widget_props = dict(height=60, bar_color=acc_color)
 # declare widgets for feature changes
 vertical_drop = pnw.IntSlider(
-    name="Δ Vertical Drop", start=0, end=300, step=150, value=150, **widget_props
+    name="Δ Vertical Drop", start=0, end=300, step=50, value=150, **widget_props
 )
 delta_runs = pnw.IntSlider(
-    name="Δ Number of Runs", start=-10, end=1, step=5, value=-10, **widget_props
+    name="Δ Number of Runs", start=-10, end=1, step=1, value=-10, **widget_props
 )
 delta_chairs = pnw.IntSlider(
     name="Δ Total Chairs", start=0, end=2, step=1, value=1, **widget_props
@@ -130,24 +142,40 @@ delta_fastQuads = pnw.IntSlider(
     name="Δ Fast Quads", start=0, end=2, step=1, value=0, **widget_props
 )
 delta_SnowMaking_ac = pnw.IntSlider(
-    name="Δ Snow covered acreage", start=0, end=4, step=2, value=2, **widget_props
+    name="Δ Snow covered acreage", start=0, end=10, step=1, value=2, **widget_props
 )
 delta_longest_run = pnw.FloatSlider(
-    name="Δ Longest Run", start=0, end=0.4, step=0.2, value=0.2, **widget_props
+    name="Δ Longest Run", start=0.0, end=1.0, step=0.2, value=0.2, **widget_props
 )
 
 # Estimates for number of guests and days open
 n_guests = pnw.IntSlider(
     name="Number of guests",
-    start=300_000,
-    end=400_000,
-    step=50_000,
+    start=250_000,
+    end=500_000,
+    step=10_000,
     value=350_000,
     **widget_props,
 )
 n_days = pnw.IntSlider(
-    name="Number of days", start=1, end=5, step=1, value=5, **widget_props
+    name="Number of days", start=1, end=8, step=1, value=5, **widget_props
 )
+
+# dict to map the feature names to the widget display names
+feature_dict = {
+    "vertical_drop": "Δ Vertical Drop",
+    "Runs": "Δ Number of Runs",
+    "total_chairs": "Δ Total Chairs",
+    "fastQuads": "Δ Fast Quads",
+    "Snow Making_ac": "Δ Snow covered acreage",
+    "LongestRun_mi": "Δ Longest Run",
+}
+
+
+# define a function to output the impact of 1 feature change
+def feature_impact(feature, delta):
+    """Returns the impact of a feature change on the ticket price"""
+    return predict_increase([feature], [delta])
 
 
 # define a function to output the predicted price
@@ -180,6 +208,65 @@ def predicted_increase(
     return ticket_change
 
 
+# create a function to determine the color of the values based on the value of the ticket change
+def ticket_color(ticket_change):
+    """Returns the color of the ticket change value"""
+    return neg_color if ticket_change < 0 else color3
+
+
+# create a func to display the chosen features values from the widgets
+# put the values in the color from the ticket_color function
+def display_features2(
+    vertical_drop,
+    delta_runs,
+    delta_chairs,
+    delta_fastQuads,
+    delta_SnowMaking_ac,
+    delta_longest_run,
+    ticket_change,
+):
+    """Returns a panel Markdown element of the chosen features values"""
+    return pn.pane.Markdown(
+        f"""
+        |Vertical Drop|Number of Runs|Total Chairs|Fast Quads|Snow covered acreage|Longest Run|
+        |---|---|---|---|---|---|
+        <span style='color: {ticket_color(ticket_change)}'> {vertical_drop} ft|{delta_runs} runs|{delta_chairs} chairs|{delta_fastQuads} fast quads|{delta_SnowMaking_ac} acres|{delta_longest_run} miles|
+        """
+    )
+
+
+def display_features(widgets, ticket_change):
+    """Returns a panel Markdown of the widgets values"""
+    value_color = ticket_color(ticket_change)
+    features = [(w.name, w.value) for w in widgets]
+    rows = "\n".join(
+        [
+            f"|{f[0]}|<span style='color: {value_color}'>{f[1]:,}</span>|"
+            for f in features
+        ]
+    )
+    return pn.pane.Markdown(f"{'|'.join(['Feature', 'Value'])}\n|:--|---:|\n{rows}\n")
+
+
+def display_features_impacts(widgets, ticket_change):
+    """Returns a panel Markdown element of the chosen features values"""
+    value_color = ticket_color(ticket_change)
+    # get the widget_name, widget_value, feature_name from the widgets
+    features = [
+        (w.name, str(w.value), next(k for k, v in feature_dict.items() if v == w.name))
+        for w in widgets
+    ]
+    rows = "\n".join(
+        [
+            f"|{f[0]}|<span style='color: {value_color}'>{f[1]}</span>|${feature_impact(f[2], float(f[1])):.2f}|"
+            for f in features
+        ]
+    )
+    return pn.pane.Markdown(
+        f"{'|'.join(['Feature', 'Value', 'Approx. Impact'])}\n|:--|---:|---:|\n{rows}\n"
+    )
+
+
 # create separate function for last year comparison
 def last_year_comparison(n_guests, n_days, ticket_change):
     """Returns a panel Markdown element of the predicted price and last year comparison"""
@@ -187,38 +274,100 @@ def last_year_comparison(n_guests, n_days, ticket_change):
     new_revenue = new_price * n_guests * n_days
     revenue_change = new_revenue - last_year_revenue
 
-    ticket_color = "darkred" if ticket_change < 0 else minor_color
-    revenue_color = "darkred" if revenue_change < 0 else minor_color
+    ticket_color = neg_color if ticket_change < 0 else color3
+    revenue_color = neg_color if revenue_change < 0 else color3
+    card_opts = dict(hide_header=True, width=300)
 
-    return pn.Row(
-        pn.pane.Markdown(
-            f"""
-        ## Model's relative price shift:
-        ### Predicted Δ ticket price:
-        # <span style="color:{ticket_color}">${ticket_change:.2f}<span>
-        ### Predicted Δ ticket revenue: 
-        # <span style="color:{revenue_color}">${format_M(revenue_change)}<span>
-        ### Predicted ticket revenue: 
-        # <span style="color:{revenue_color}">${format_M(new_revenue)}<span>
-        """
+    d_ticket_card = pn.Card(
+        pn.indicators.Number(
+            name="Predicted Δ ticket price",
+            value=ticket_change,
+            format="${value:.2f}",
+            default_color=ticket_color,
         ),
-        pn.pane.Markdown(
-            f"""
-        ## Calculations based on:
-        #### Assumed new ticket price:
-        ### <span style="color:{ticket_color}">${new_price:.2f}<span>
-        #### Estimated number of guests:
-        ### <span style="color:{ticket_color}">{n_guests:,.0f}<span> guests
-        #### Estimated avg. length of stay: 
-        ### <span style="color:{ticket_color}">{n_days:,.0f} <span> days 
-        ## Last year's for reference:
-        ### Last year's ticket price:
-        ### <span style="color:{ticket_color}">${base_price:.2f}<span>
-        ### Last year's ticket revenue:
-        ### <span style="color:{ticket_color}">${format_M(last_year_revenue)}<span>
-        """
-        ),
+        **card_opts,
     )
+
+    new_ticket_card = pn.Card(
+        pn.indicators.Number(
+            name="Assumed new ticket price",
+            value=new_price,
+            format="${value:.2f}",
+            default_color=ticket_color,
+        ),
+        **card_opts,
+    )
+
+    d_ticket_revenue_card = pn.Card(
+        pn.indicators.Number(
+            name="Extrapolated Δ revenue",
+            value=revenue_change / 1_000_000
+            if abs(revenue_change) >= 1_000_000
+            else revenue_change,
+            format="${value:.1f}M"
+            if abs(revenue_change) >= 1_000_000
+            else "${value:,.0f}",
+            default_color=revenue_color,
+        ),
+        **card_opts,
+    )
+
+    ticket_revenue_card = pn.Card(
+        pn.indicators.Number(
+            name="Extrapolated revenue",
+            value=new_revenue / 1_000_000
+            if abs(new_revenue) >= 1_000_000
+            else new_revenue,
+            format="${value:.1f}M"
+            if abs(new_revenue) >= 1_000_000
+            else "${value:,.0f}",
+            default_color=revenue_color,
+        ),
+        **card_opts,
+    )
+
+    last_year_ticket_card = pn.Card(
+        pn.indicators.Number(
+            name="Last Year's ticket price",
+            value=base_price,
+            format="${value:.2f}",
+            default_color=minor_color,
+        ),
+        **card_opts,
+    )
+
+    last_year_revenue_card = pn.Card(
+        pn.indicators.Number(
+            name="Last Year's ticket revenue",
+            value=last_year_revenue / 1_000_000
+            if abs(last_year_revenue) >= 1_000_000
+            else last_year_revenue,
+            format="${value:.1f}M"
+            if abs(last_year_revenue) >= 1_000_000
+            else "${value:,.0f}",
+            default_color=minor_color,
+        ),
+        **card_opts,
+    )
+
+    cards = pn.FlexBox(
+        ## Model's relative price shift:
+        *[
+            pn.pane.Markdown("## Model's relative ticket price shift:"),
+            d_ticket_card,
+            new_ticket_card,
+            last_year_ticket_card,
+            pn.pane.Markdown("## Extrapolated revenue price shift:"),
+            d_ticket_revenue_card,
+            ticket_revenue_card,
+            last_year_revenue_card,
+        ],
+        align_items="center",
+        justify_content="space-evenly",
+        flex_wrap="wrap",
+    )
+
+    return pn.Column(cards)
 
 
 # get df of last year comparison
@@ -231,7 +380,7 @@ def get_revenue_df(n_guests, n_days, ticket_change):
     revenue_df = pd.DataFrame(
         {
             "Last Year": [last_year_revenue],
-            "Predicted": [predicted_revenue],
+            "Extrapolated": [predicted_revenue],
         },
         index=["revenue"]
         # orient="columns", columns=["revenue_last_year", "predicted_revenue"]
@@ -239,62 +388,29 @@ def get_revenue_df(n_guests, n_days, ticket_change):
     return revenue_df
 
 
-# define function to plot barh on a panel
-def barh_callback(df: pd.DataFrame):
-    """Returns a hvplot barh element of the revenue comparison dataframe"""
-    # create a color column with the color minor color if the value is negative
-    dataframe = pd.DataFrame()
-
-    dataframe = df.copy()
-
-    bar_color = (
-        "darkred"
-        if (
-            dataframe["predicted_revenue"].iloc[0]
-            < dataframe["revenue_last_year"].iloc[0]
-        )
-        else minor_color
-    )
-
-    bars = hv.Bars(dataframe)
-    bars[["revenue_last_year", "predicted_revenue"]]
-    bars.redim.label(revenue_last_year="Last Year", predicted_revenue="Predicted")
-    return bars[["revenue_last_year", "predicted_revenue"]].opts(
-        # return dataframe.hvplot.barh(
-        title="Revenue Comparison",
-        # xlabel="",
-        ylabel="",
-        color=bar_color,
-        # height=200,
-        tools=["hover"],
-        yticks=None,
-        # yaxis="bare",
-        yformatter=NumeralTickFormatter(format="$ 0.0 a"),
-        toolbar=None,
-    )
-
-
 def hbar_callback(df):
     # create a color column with the color minor color if the value is negative
     dataframe = pd.DataFrame()
     dataframe = df.copy()
     bar_color = (
-        "darkred"
-        if (dataframe["Predicted"].iloc[0] < dataframe["Last Year"].iloc[0])
+        neg_color
+        if (dataframe["Extrapolated"].iloc[0] < dataframe["Last Year"].iloc[0])
         else color3
     )
 
     dataframe = dataframe.T.reset_index()
-    bars = hv.Bars(dataframe, ["index"], vdims=["revenue"]).opts(
+    dataframe.loc[:, "color"] = minor_color
+    dataframe.loc[1, "color"] = bar_color
+    bars = hv.Bars(dataframe, ["index"], vdims=["revenue", "color"]).opts(
         title="Revenue Comparison",
-        color=bar_color,
+        color="color",
         xlabel="",
         ylabel="",
         invert_axes=True,
         tools=["hover"],
         toolbar="above",
         xticks=4,
-        ylim=(0, 220_000_000),
+        # ylim=(0, 220_000_000),
         xformatter=NumeralTickFormatter(format="$ 0.0 a"),
         hooks=[hook],
         fontsize={
@@ -307,7 +423,7 @@ def hbar_callback(df):
     return bars
 
 
-# create a reactive function to output the predicted price and lasr year comparison
+# create a reactive function to output the predicted price and last year comparison
 reactive_predicted_increase = pn.bind(
     predicted_increase,
     vertical_drop,
@@ -318,21 +434,56 @@ reactive_predicted_increase = pn.bind(
     delta_longest_run,
 )
 
+reactive_color = pn.bind(ticket_color, reactive_predicted_increase)
+
+feature_widgets = [
+    vertical_drop,
+    delta_runs,
+    delta_chairs,
+    delta_fastQuads,
+    delta_SnowMaking_ac,
+    delta_longest_run,
+]
+estimator_widgets = [n_guests, n_days]
+
+# reactive features display
+reactive_features = pn.bind(
+    display_features_impacts, feature_widgets, reactive_predicted_increase
+)
+reactive_estimators = pn.bind(
+    display_features, estimator_widgets, reactive_predicted_increase
+)
+
+
+# bound the reactive function to the last year comparison function
 reactive_last_year_comparison = pn.bind(
     last_year_comparison, n_guests, n_days, reactive_predicted_increase
 )
 reactive_revenue_df = pn.bind(
     get_revenue_df, n_guests, n_days, reactive_predicted_increase
 )
-reactive_barh = pn.bind(barh_callback, reactive_revenue_df)
 
-reactive_hbar = pn.bind(hbar_callback, reactive_revenue_df)
+reactive_hbar = pn.bind(hbar_callback, df=reactive_revenue_df)
 
 
 reactive_panel = pn.Column(
     # reactive_predicted_increase,
     reactive_last_year_comparison,
-    # reactive_barh,
+    pn.FlexBox(
+        pn.Column(
+            pn.panel(pn.pane.Markdown("## Feature Adjustments"), width=400),
+            reactive_features,
+            width=400,
+        ),
+        pn.Column(
+            pn.panel(pn.pane.Markdown("## Guests Estimates"), width=400),
+            reactive_estimators,
+            width=400,
+        ),
+        #  align_items="center",
+        justify_content="space-evenly",
+        flex_wrap="wrap",
+    ),
     reactive_hbar,
 )
 
@@ -365,6 +516,7 @@ bmr_app = pn.template.FastListTemplate(
     title=f"BMR: Δ TICKET PRICE MODEL",
     sidebar=sidebar_widgets,
     header_color=acc_color,
+    header_background=minor_color,
     accent_base_color=acc_color,
     neutral_color=acc_color,
     logo=logo_path,

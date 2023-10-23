@@ -485,6 +485,7 @@ reactive_panel = pn.Column(
         flex_wrap="wrap",
     ),
     reactive_hbar,
+    sizing_mode='stretch_both'
 )
 
 

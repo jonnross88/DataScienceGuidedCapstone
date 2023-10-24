@@ -16,7 +16,7 @@ import panel as pn
 pn.config.throttled = True
 
 #  set the sizing mode for the panels
-pn.extension(sizing_mode="stretch_width")
+pn.extension("floatpanel", sizing_mode="stretch_width")
 
 
 acc_color = "#001b30"
@@ -133,7 +133,7 @@ vertical_drop = pnw.IntSlider(
     name="Δ Vertical Drop", start=0, end=300, step=50, value=150, **widget_props
 )
 delta_runs = pnw.IntSlider(
-    name="Δ Number of Runs", start=-10, end=1, step=1, value=-10, **widget_props
+    name="Δ Number of Runs", start=-10, end=10, step=1, value=-10, **widget_props
 )
 delta_chairs = pnw.IntSlider(
     name="Δ Total Chairs", start=0, end=2, step=1, value=1, **widget_props
@@ -276,11 +276,11 @@ def last_year_comparison(n_guests, n_days, ticket_change):
 
     ticket_color = neg_color if ticket_change < 0 else color3
     revenue_color = neg_color if revenue_change < 0 else color3
-    card_opts = dict(hide_header=True, width=300)
+    card_opts = dict(hide_header=True, width=300, margin=(0, 1, 0, 10))
 
     d_ticket_card = pn.Card(
         pn.indicators.Number(
-            name="Predicted Δ ticket price",
+            name="Δ Ticket price",
             value=ticket_change,
             format="${value:.2f}",
             default_color=ticket_color,
@@ -290,7 +290,7 @@ def last_year_comparison(n_guests, n_days, ticket_change):
 
     new_ticket_card = pn.Card(
         pn.indicators.Number(
-            name="Assumed new ticket price",
+            name="New ticket price",
             value=new_price,
             format="${value:.2f}",
             default_color=ticket_color,
@@ -300,7 +300,7 @@ def last_year_comparison(n_guests, n_days, ticket_change):
 
     d_ticket_revenue_card = pn.Card(
         pn.indicators.Number(
-            name="Extrapolated Δ revenue",
+            name="Estimated Δ revenue",
             value=revenue_change / 1_000_000
             if abs(revenue_change) >= 1_000_000
             else revenue_change,
@@ -314,7 +314,7 @@ def last_year_comparison(n_guests, n_days, ticket_change):
 
     ticket_revenue_card = pn.Card(
         pn.indicators.Number(
-            name="Extrapolated revenue",
+            name="Estimated revenue",
             value=new_revenue / 1_000_000
             if abs(new_revenue) >= 1_000_000
             else new_revenue,
@@ -328,7 +328,7 @@ def last_year_comparison(n_guests, n_days, ticket_change):
 
     last_year_ticket_card = pn.Card(
         pn.indicators.Number(
-            name="Last Year's ticket price",
+            name="Last Year ticket price",
             value=base_price,
             format="${value:.2f}",
             default_color=minor_color,
@@ -338,7 +338,7 @@ def last_year_comparison(n_guests, n_days, ticket_change):
 
     last_year_revenue_card = pn.Card(
         pn.indicators.Number(
-            name="Last Year's ticket revenue",
+            name="Last Year revenue",
             value=last_year_revenue / 1_000_000
             if abs(last_year_revenue) >= 1_000_000
             else last_year_revenue,
@@ -351,19 +351,19 @@ def last_year_comparison(n_guests, n_days, ticket_change):
     )
 
     cards = pn.FlexBox(
-        ## Model's relative price shift:
         *[
-            pn.pane.Markdown("## Model's relative ticket price shift:"),
+            pn.pane.Markdown("### Relative price change:"),
             d_ticket_card,
             new_ticket_card,
             last_year_ticket_card,
-            pn.pane.Markdown("## Extrapolated revenue price shift:"),
+            pn.pane.Markdown("### Revenue Estimates:"),
             d_ticket_revenue_card,
             ticket_revenue_card,
             last_year_revenue_card,
         ],
-        align_items="center",
-        justify_content="space-evenly",
+        # align_items="center",
+        # align_content='normal',
+        justify_content="space-between",
         flex_wrap="wrap",
     )
 
@@ -380,7 +380,7 @@ def get_revenue_df(n_guests, n_days, ticket_change):
     revenue_df = pd.DataFrame(
         {
             "Last Year": [last_year_revenue],
-            "Extrapolated": [predicted_revenue],
+            "Estimated": [predicted_revenue],
         },
         index=["revenue"]
         # orient="columns", columns=["revenue_last_year", "predicted_revenue"]
@@ -394,7 +394,7 @@ def hbar_callback(df):
     dataframe = df.copy()
     bar_color = (
         neg_color
-        if (dataframe["Extrapolated"].iloc[0] < dataframe["Last Year"].iloc[0])
+        if (dataframe["Estimated"].iloc[0] < dataframe["Last Year"].iloc[0])
         else color3
     )
 
@@ -423,6 +423,16 @@ def hbar_callback(df):
     return bars
 
 
+# define the reset button and callback function
+def reset_features(event):
+    for widget in feature_widgets:
+        widget.value = default_values[widget.name]
+
+
+reset_button = pn.widgets.Button(name="Reset")
+reset_button.on_click(reset_features)
+
+
 # create a reactive function to output the predicted price and last year comparison
 reactive_predicted_increase = pn.bind(
     predicted_increase,
@@ -444,6 +454,8 @@ feature_widgets = [
     delta_SnowMaking_ac,
     delta_longest_run,
 ]
+
+default_values = {w.name: w.value for w in feature_widgets}
 estimator_widgets = [n_guests, n_days]
 
 # reactive features display
@@ -464,29 +476,19 @@ reactive_revenue_df = pn.bind(
 )
 
 reactive_hbar = pn.bind(hbar_callback, df=reactive_revenue_df)
-
-
-reactive_panel = pn.Column(
-    # reactive_predicted_increase,
-    reactive_last_year_comparison,
-    pn.FlexBox(
-        pn.Column(
-            pn.panel(pn.pane.Markdown("## Feature Adjustments"), width=400),
-            reactive_features,
-            width=400,
-        ),
-        pn.Column(
-            pn.panel(pn.pane.Markdown("## Guests Estimates"), width=400),
-            reactive_estimators,
-            width=400,
-        ),
-        #  align_items="center",
-        justify_content="space-evenly",
-        flex_wrap="wrap",
-    ),
-    reactive_hbar,
-    sizing_mode='stretch_both'
+features_table_md = pn.Column(
+    pn.panel(pn.pane.Markdown("#### Whatif Features"), width=300),
+    reactive_features,
+    width=300,
 )
+estimates_table_md = pn.Column(
+    pn.panel(pn.pane.Markdown("#### Estimates"), width=300),
+    reactive_estimators,
+    width=300,
+)
+
+
+reactive_panel = pn.Column(reactive_last_year_comparison, reactive_hbar)
 
 
 # Kill any running servers before starting the new one
@@ -494,35 +496,74 @@ pn.state.kill_all_servers()
 
 logo_path = "./images/Big Montain Resort.svg"
 
+md_tables = [features_table_md, estimates_table_md]
 
-sidebar_widgets = [
-    pn.WidgetBox(
-        "## Feature Adjustments",
+w_controls = [
+    reset_button,
+    pn.Card(
         vertical_drop,
         delta_runs,
         delta_chairs,
         delta_fastQuads,
         delta_SnowMaking_ac,
         delta_longest_run,
+        title="Features",
     ),
-    pn.WidgetBox(
-        "## Guests Estimates",
-        n_guests,
-        n_days,
-    ),
+    pn.Card(n_guests, n_days, title="Estimates"),
 ]
 
+floatie = pn.layout.FloatPanel(
+    *w_controls,
+    name="Widgets",
+    contained=False,
+    width=300,
+    config={"headerControls": {"close": "remove", 'maximize': 'remove'}},
+    theme=color3,
+)
+
+intro = pn.pane.Markdown(
+    """Skiing is a slippery slope: let's slide! This is **SlideRuleBMR**! 
+    
+    Welcome!
+     
+    Curious if adding that extra half mile to your longest run will offset closing 10 runs?
+    
+    Let's find out!
+    """
+    # Are you curious as to what an appropriate price increase for an exciting addition
+    # to **Big Mountain Resort** that you know customers will say yes for? 
+    
+    # Or, are you wondering about what adds little-to-no value to the ticket price, 
+    # that which you can wipeout! Maybe both? 
+    
+    # If you said 'yes', 'no', or 'maybe', to any of those questions proceed and enjoy!
+    # At your fingertips, you are able to create some of your most curious what-if 
+    # scenarios and see what impact they have on the ticket price using 
+    # Machine Learning and the **Random Forest** algorithm built and trained specifically for
+    # Big Mountain Resort on its market competitors data.
+)
+intro_floatie = pn.layout.FloatPanel(
+    intro,
+    name="Intro",
+    height=300,
+    theme=color3,
+    contained=False,
+    position='center',
+    config={"headerControls": {"minimize": "remove", "maximize": "remove"},"smallify": "remove", "normalize":"remove"},
+)
 
 bmr_app = pn.template.FastListTemplate(
-    title=f"BMR: Δ TICKET PRICE MODEL",
-    sidebar=sidebar_widgets,
+    title=f"SlideRuleBMR: WHATIF ESTIMATOR",
+    sidebar=md_tables,
     header_color=acc_color,
-    header_background=minor_color,
+    header_background=color3,
     accent_base_color=acc_color,
     neutral_color=acc_color,
     logo=logo_path,
 )
 
 bmr_app.main.append(reactive_panel)
+bmr_app.sidebar.append(pn.Column(floatie, width=330))
+bmr_app.main.append(intro_floatie)
 
 bmr_app.servable()

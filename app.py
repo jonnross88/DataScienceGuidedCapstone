@@ -130,22 +130,22 @@ widget_height = 60
 widget_props = dict(height=60, bar_color=acc_color)
 # declare widgets for feature changes
 vertical_drop = pnw.IntSlider(
-    name="Δ Vertical Drop", start=0, end=300, step=50, value=150, **widget_props
+    name="Δ Vertical Drop", start=0, end=300, step=50, value=0, **widget_props
 )
 delta_runs = pnw.IntSlider(
-    name="Δ Number of Runs", start=-10, end=10, step=1, value=-10, **widget_props
+    name="Δ Number of Runs", start=-10, end=10, step=1, value=0, **widget_props
 )
 delta_chairs = pnw.IntSlider(
-    name="Δ Total Chairs", start=0, end=2, step=1, value=1, **widget_props
+    name="Δ Total Chairs", start=0, end=5, step=1, value=0, **widget_props
 )
 delta_fastQuads = pnw.IntSlider(
     name="Δ Fast Quads", start=0, end=2, step=1, value=0, **widget_props
 )
 delta_SnowMaking_ac = pnw.IntSlider(
-    name="Δ Snow covered acreage", start=0, end=10, step=1, value=2, **widget_props
+    name="Δ Snow covered acreage", start=0, end=10, step=1, value=0, **widget_props
 )
 delta_longest_run = pnw.FloatSlider(
-    name="Δ Longest Run", start=0.0, end=1.0, step=0.2, value=0.2, **widget_props
+    name="Δ Longest Run", start=0.0, end=1.0, step=0.2, value=0.0, **widget_props
 )
 
 # Estimates for number of guests and days open
@@ -158,7 +158,7 @@ n_guests = pnw.IntSlider(
     **widget_props,
 )
 n_days = pnw.IntSlider(
-    name="Number of days", start=1, end=8, step=1, value=5, **widget_props
+    name="Number of days", start=1, end=10, step=1, value=5, **widget_props
 )
 
 # dict to map the feature names to the widget display names
@@ -429,8 +429,39 @@ def reset_features(event):
         widget.value = default_values[widget.name]
 
 
+tooltip_text = """
+Features
+- You can adjust the features of the ski resort, such as 
+  - vertical drop, 
+  - number of runs, 
+  - total chairs, 
+  - fast quads, 
+  - snow covered acreage, and 
+  - longest run. 
+- These features are based on the data of the market competitors of Big Mountain Resort.
+
+Model: 
+- The website uses a machine learning model called Random Forest to predict the ticket price change based on the features you adjust. 
+- The model was trained on the data of 330 ski resorts in North America.
+
+Estimates: 
+- The website also estimates the revenue change based on the ticket price change and some assumptions about the number of guests and number of days of stay. 
+- These assumptions can also be adjusted by you.
+
+Widgets: 
+- Widgets panel is a floating panel on the left side of the screen where you can adjust the Features and Estimates. 
+- As you adjust them, you will see the results on the right side of the screen.
+
+"""
+info_window = pn.pane.Markdown(tooltip_text)
+
 reset_button = pn.widgets.Button(name="Reset")
 reset_button.on_click(reset_features)
+
+info_icon = pnw.TooltipIcon(value=tooltip_text)
+info_bar = pn.Row(
+    pn.Spacer(width=300),info_icon,
+)
 
 
 # create a reactive function to output the predicted price and last year comparison
@@ -488,9 +519,6 @@ estimates_table_md = pn.Column(
 )
 
 
-reactive_panel = pn.Column(reactive_last_year_comparison, reactive_hbar)
-
-
 # Kill any running servers before starting the new one
 pn.state.kill_all_servers()
 
@@ -512,49 +540,68 @@ w_controls = [
     pn.Card(n_guests, n_days, title="Estimates"),
 ]
 
-floatie = pn.layout.FloatPanel(
+w_floatie = pn.layout.FloatPanel(
     *w_controls,
     name="Widgets",
     contained=False,
+    position="left-center",
     width=300,
-    config={"headerControls": {"close": "remove", 'maximize': 'remove'}},
+    config={
+        "headerControls": {"close": "remove", "maximize": "remove"},
+        "borderRadius": ".5rem",
+        },
     theme=color3,
 )
 
-intro = pn.pane.Markdown(
-    """Skiing is a slippery slope: let's slide! This is **SlideRuleBMR**! 
+intro = pn.pane.HTML(
+    """<p align='right'><i>Skiing is a slippery slope: let's slide!</i></p>
+    This is <b>SlideRuleBMR</b>!
+        
+    <p>Curious if adding that extra &#xBD; mile to your longest run will offset
+    closing 10 other runs?</p>
     
-    Welcome!
-     
-    Curious if adding that extra half mile to your longest run will offset closing 10 runs?
+    Let's find out!<br>
     
-    Let's find out!
+    <p>Use the widgets in the floating pane to the left of your screen to get
+    started!</p>
+    
+    <p>But first, close this window by clicking the <b>'X'</b> in the top right corner.</p>
     """
     # Are you curious as to what an appropriate price increase for an exciting addition
-    # to **Big Mountain Resort** that you know customers will say yes for? 
-    
-    # Or, are you wondering about what adds little-to-no value to the ticket price, 
-    # that which you can wipeout! Maybe both? 
-    
+    # to **Big Mountain Resort** that you know customers will say yes for?
+    # Or, are you wondering about what adds little-to-no value to the ticket price,
+    # that which you can wipeout! Maybe both?
     # If you said 'yes', 'no', or 'maybe', to any of those questions proceed and enjoy!
-    # At your fingertips, you are able to create some of your most curious what-if 
-    # scenarios and see what impact they have on the ticket price using 
+    # At your fingertips, you are able to create some of your most curious what-if
+    # scenarios and see what impact they have on the ticket price using
     # Machine Learning and the **Random Forest** algorithm built and trained specifically for
     # Big Mountain Resort on its market competitors data.
 )
+
 intro_floatie = pn.layout.FloatPanel(
-    intro,
-    name="Intro",
-    height=300,
-    theme=color3,
+    pn.panel(intro),
+    name=f"Welcome!",
+    # theme=color3,
     contained=False,
-    position='center',
-    config={"headerControls": {"minimize": "remove", "maximize": "remove"},"smallify": "remove", "normalize":"remove"},
+    position="center",
+    width=500,
+    config={
+        "headerControls": {"maximize": "remove"},
+        "theme": {
+            "bgPanel": color3,
+            "border": f"thin solid {minor_color}",
+            "colorHeader": acc_color,
+        },
+        "colorContent": "f00",
+        "borderRadius": ".5rem",
+    },
 )
+
+
+reactive_panel = pn.Column(info_icon, reactive_last_year_comparison, reactive_hbar)
 
 bmr_app = pn.template.FastListTemplate(
     title=f"SlideRuleBMR: WHATIF ESTIMATOR",
-    sidebar=md_tables,
     header_color=acc_color,
     header_background=color3,
     accent_base_color=acc_color,
@@ -562,8 +609,11 @@ bmr_app = pn.template.FastListTemplate(
     logo=logo_path,
 )
 
+
+bmr_app.sidebar.extend(md_tables)
+
 bmr_app.main.append(reactive_panel)
-bmr_app.sidebar.append(pn.Column(floatie, width=330))
-bmr_app.main.append(intro_floatie)
+bmr_app.sidebar.append(pn.Column(w_floatie))
+bmr_app.main.append(pn.Column(intro_floatie, sizing_mode="stretch_width"))
 
 bmr_app.servable()

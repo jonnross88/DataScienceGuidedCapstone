@@ -114,7 +114,7 @@ def format_M(num):
 
 
 def hook(plot, element):
-    plot.handles["xaxis"].major_tick_line_color = None
+    # plot.handles["xaxis"].major_tick_line_color = None
     plot.handles["yaxis"].major_tick_line_color = None
     plot.handles["xaxis"].minor_tick_line_color = None
     plot.handles["yaxis"].minor_tick_line_color = None
@@ -122,12 +122,13 @@ def hook(plot, element):
     plot.handles["yaxis"].axis_line_color = None
 
 
-# Some default values for the widgets
 base_price, last_year_n_guests, last_year_n_days = 81, 350_000, 5
 last_year_revenue = base_price * last_year_n_guests * last_year_n_days
 
+# Some default values for the widgets
 widget_height = 60
 widget_props = dict(height=60, bar_color=acc_color)
+
 # declare widgets for feature changes
 vertical_drop = pnw.IntSlider(
     name="Δ Vertical Drop", start=0, end=300, step=50, value=0, **widget_props
@@ -214,26 +215,6 @@ def ticket_color(ticket_change):
     return neg_color if ticket_change < 0 else color3
 
 
-# create a func to display the chosen features values from the widgets
-# put the values in the color from the ticket_color function
-def display_features2(
-    vertical_drop,
-    delta_runs,
-    delta_chairs,
-    delta_fastQuads,
-    delta_SnowMaking_ac,
-    delta_longest_run,
-    ticket_change,
-):
-    """Returns a panel Markdown element of the chosen features values"""
-    return pn.pane.Markdown(
-        f"""
-        |Vertical Drop|Number of Runs|Total Chairs|Fast Quads|Snow covered acreage|Longest Run|
-        |---|---|---|---|---|---|
-        <span style='color: {ticket_color(ticket_change)}'> {vertical_drop} ft|{delta_runs} runs|{delta_chairs} chairs|{delta_fastQuads} fast quads|{delta_SnowMaking_ac} acres|{delta_longest_run} miles|
-        """
-    )
-
 
 def display_features(widgets, ticket_change):
     """Returns a panel Markdown of the widgets values"""
@@ -276,96 +257,72 @@ def last_year_comparison(n_guests, n_days, ticket_change):
 
     ticket_color = neg_color if ticket_change < 0 else color3
     revenue_color = neg_color if revenue_change < 0 else color3
-    card_opts = dict(hide_header=True, width=300, margin=(0, 1, 0, 10))
+    card_opts = dict(hide_header=True, width=300)
 
-    d_ticket_card = pn.Card(
-        pn.indicators.Number(
-            name="Δ Ticket price",
-            value=ticket_change,
-            format="${value:.2f}",
-            default_color=ticket_color,
-        ),
-        **card_opts,
+    sub_heads = []
+    sub_heads.append(pn.pane.Markdown("### Relative price change:"))
+    sub_heads.append(pn.pane.Markdown("### Revenue Estimates:"))
+
+    indicators = []
+    delta_ticket = pn.indicators.Number(
+        name="Δ Ticket price",
+        value=ticket_change,
+        format="${value:.2f}",
+        default_color=ticket_color,
+    )
+    indicators.append(delta_ticket)
+    new_ticket = pn.indicators.Number(
+        name="New ticket price",
+        value=new_price,
+        format="${value:.2f}",
+        default_color=ticket_color,
+    )
+    indicators.append(new_ticket)
+    last_year_ticket = pn.indicators.Number(
+        name="Last Year ticket price",
+        value=base_price,
+        format="${value:.2f}",
+        default_color=minor_color,
+    )
+    indicators.append(last_year_ticket)
+
+    d_revenue = pn.indicators.Number(
+        name="Estimated Δ revenue",
+        value=revenue_change / 1_000_000
+        if abs(revenue_change) >= 1_000_000
+        else revenue_change,
+        format="${value:.1f}M" if abs(revenue_change) >= 1_000_000 else "${value:,.0f}",
+        default_color=revenue_color,
+    )
+    indicators.append(d_revenue)
+    revenue = pn.indicators.Number(
+        name="Estimated revenue",
+        value=new_revenue / 1_000_000 if abs(new_revenue) >= 1_000_000 else new_revenue,
+        format="${value:.1f}M" if abs(new_revenue) >= 1_000_000 else "${value:,.0f}",
+        default_color=revenue_color,
+    )
+    indicators.append(revenue)
+
+    last_year_revenue_i = pn.indicators.Number(
+        name="Last Year revenue",
+        value=last_year_revenue / 1_000_000
+        if abs(last_year_revenue) >= 1_000_000
+        else last_year_revenue,
+        format="${value:.1f}M"
+        if abs(last_year_revenue) >= 1_000_000
+        else "${value:,.0f}",
+        default_color=minor_color,
+    )
+    indicators.append(last_year_revenue_i)
+
+    # put each indicator on a card
+    indicator_cards = [pn.Card(indicator, **card_opts) for indicator in indicators]
+    # add i subhead for every 3 indicators
+    mixed_list = (
+        [sub_heads[0]] + indicator_cards[:3] + [sub_heads[1]] + indicator_cards[3:]
     )
 
-    new_ticket_card = pn.Card(
-        pn.indicators.Number(
-            name="New ticket price",
-            value=new_price,
-            format="${value:.2f}",
-            default_color=ticket_color,
-        ),
-        **card_opts,
-    )
-
-    d_ticket_revenue_card = pn.Card(
-        pn.indicators.Number(
-            name="Estimated Δ revenue",
-            value=revenue_change / 1_000_000
-            if abs(revenue_change) >= 1_000_000
-            else revenue_change,
-            format="${value:.1f}M"
-            if abs(revenue_change) >= 1_000_000
-            else "${value:,.0f}",
-            default_color=revenue_color,
-        ),
-        **card_opts,
-    )
-
-    ticket_revenue_card = pn.Card(
-        pn.indicators.Number(
-            name="Estimated revenue",
-            value=new_revenue / 1_000_000
-            if abs(new_revenue) >= 1_000_000
-            else new_revenue,
-            format="${value:.1f}M"
-            if abs(new_revenue) >= 1_000_000
-            else "${value:,.0f}",
-            default_color=revenue_color,
-        ),
-        **card_opts,
-    )
-
-    last_year_ticket_card = pn.Card(
-        pn.indicators.Number(
-            name="Last Year ticket price",
-            value=base_price,
-            format="${value:.2f}",
-            default_color=minor_color,
-        ),
-        **card_opts,
-    )
-
-    last_year_revenue_card = pn.Card(
-        pn.indicators.Number(
-            name="Last Year revenue",
-            value=last_year_revenue / 1_000_000
-            if abs(last_year_revenue) >= 1_000_000
-            else last_year_revenue,
-            format="${value:.1f}M"
-            if abs(last_year_revenue) >= 1_000_000
-            else "${value:,.0f}",
-            default_color=minor_color,
-        ),
-        **card_opts,
-    )
-
-    cards = pn.FlexBox(
-        *[
-            pn.pane.Markdown("### Relative price change:"),
-            d_ticket_card,
-            new_ticket_card,
-            last_year_ticket_card,
-            pn.pane.Markdown("### Revenue Estimates:"),
-            d_ticket_revenue_card,
-            ticket_revenue_card,
-            last_year_revenue_card,
-        ],
-        # align_items="center",
-        # align_content='normal',
-        justify_content="space-between",
-        flex_wrap="wrap",
-    )
+    cards = pn.FlexBox(*mixed_list, justify_content="space-between", flex_wrap="wrap")
 
     return pn.Column(cards)
 
@@ -411,7 +368,7 @@ def hbar_callback(df):
         toolbar="above",
         xticks=4,
         # ylim=(0, 220_000_000),
-        xformatter=NumeralTickFormatter(format="$ 0.0 a"),
+        xformatter=NumeralTickFormatter(format="$ 0 a"),
         hooks=[hook],
         fontsize={
             "title": "16pt",
@@ -430,27 +387,29 @@ def reset_features(event):
 
 
 tooltip_text = """
+Widgets: 
+- Widgets controls are on a floating panel found initially on the left side of the screen
+- Using these controls, you can adjust the Features and Estimates. 
+
 Features
-- You can adjust the features of the ski resort, such as 
-  - vertical drop, 
-  - number of runs, 
-  - total chairs, 
+You can adjust the features of the ski resort, such as 
   - fast quads, 
+  - number of runs, 
   - snow covered acreage, and 
+  - vertical drop, 
+  - total chairs, 
   - longest run. 
-- These features are based on the data of the market competitors of Big Mountain Resort.
+These features either had the highest feature importance from the modal or are features of interest to Big Mountain Resort.
 
 Model: 
-- The website uses a machine learning model called Random Forest to predict the ticket price change based on the features you adjust. 
-- The model was trained on the data of 330 ski resorts in North America.
+- As you adjust any of the features/ widget values, the model predicts the relative combined change to the ticket prices accordingly
+- The individual impact of any of the adjusted features if taken alone are show in the table in the sidebar
 
 Estimates: 
-- The website also estimates the revenue change based on the ticket price change and some assumptions about the number of guests and number of days of stay. 
-- These assumptions can also be adjusted by you.
+- Estimated changes in revenue based on the ticket price change are also extrapolated
+- The revenue changes uses last year's guest turnout by default.
+- Controls to edit these values for this year's guest turnout can also be adjusted from the widget panel.
 
-Widgets: 
-- Widgets panel is a floating panel on the left side of the screen where you can adjust the Features and Estimates. 
-- As you adjust them, you will see the results on the right side of the screen.
 
 """
 info_window = pn.pane.Markdown(tooltip_text)
@@ -458,9 +417,10 @@ info_window = pn.pane.Markdown(tooltip_text)
 reset_button = pn.widgets.Button(name="Reset")
 reset_button.on_click(reset_features)
 
-info_icon = pnw.TooltipIcon(value=tooltip_text)
-info_bar = pn.Row(
-    pn.Spacer(width=300),info_icon,
+main_info_icon = pnw.TooltipIcon(value=tooltip_text)
+main_info_bar = pn.Row(
+    pn.Spacer(width=300),
+    main_info_icon,
 )
 
 
@@ -478,11 +438,11 @@ reactive_predicted_increase = pn.bind(
 reactive_color = pn.bind(ticket_color, reactive_predicted_increase)
 
 feature_widgets = [
-    vertical_drop,
-    delta_runs,
-    delta_chairs,
     delta_fastQuads,
+    delta_runs,
     delta_SnowMaking_ac,
+    vertical_drop,
+    delta_chairs,
     delta_longest_run,
 ]
 
@@ -522,40 +482,42 @@ estimates_table_md = pn.Column(
 # Kill any running servers before starting the new one
 pn.state.kill_all_servers()
 
-logo_path = "./images/Big Montain Resort.svg"
+logo_path = "./Big Mountain Resort.svg"
 
 md_tables = [features_table_md, estimates_table_md]
 
 w_controls = [
     reset_button,
     pn.Card(
-        vertical_drop,
-        delta_runs,
-        delta_chairs,
         delta_fastQuads,
+        delta_runs,
         delta_SnowMaking_ac,
+        vertical_drop,
+        delta_chairs,
         delta_longest_run,
         title="Features",
     ),
     pn.Card(n_guests, n_days, title="Estimates"),
 ]
-
+# declare floating widget controls panel
 w_floatie = pn.layout.FloatPanel(
-    *w_controls,
     name="Widgets",
     contained=False,
     position="left-center",
     width=300,
+    offsetx=20,
+    height=300,
     config={
         "headerControls": {"close": "remove", "maximize": "remove"},
         "borderRadius": ".5rem",
-        },
+    },
     theme=color3,
 )
+w_floatie.append(pn.Column(*w_controls, sizing_mode="stretch_width"))
 
 intro = pn.pane.HTML(
-    """<p align='right'><i>Skiing is a slippery slope: let's slide!</i></p>
-    This is <b>SlideRuleBMR</b>!
+    f"""<p align='right'><i>Skiing is a slippery slope: let's slide!</i></p>
+    <div>This is <span style='color: {color3}'><b>SlideRuleBMR</b></span>!</div>
         
     <p>Curious if adding that extra &#xBD; mile to your longest run will offset
     closing 10 other runs?</p>
@@ -566,6 +528,7 @@ intro = pn.pane.HTML(
     started!</p>
     
     <p>But first, close this window by clicking the <b>'X'</b> in the top right corner.</p>
+    
     """
     # Are you curious as to what an appropriate price increase for an exciting addition
     # to **Big Mountain Resort** that you know customers will say yes for?
@@ -579,7 +542,6 @@ intro = pn.pane.HTML(
 )
 
 intro_floatie = pn.layout.FloatPanel(
-    pn.panel(intro),
     name=f"Welcome!",
     # theme=color3,
     contained=False,
@@ -596,9 +558,9 @@ intro_floatie = pn.layout.FloatPanel(
         "borderRadius": ".5rem",
     },
 )
+intro_floatie.append(pn.Card(intro, hide_header=True, sizing_mode="stretch_width"))
 
-
-reactive_panel = pn.Column(info_icon, reactive_last_year_comparison, reactive_hbar)
+reactive_panel = pn.Column(main_info_icon, reactive_last_year_comparison, reactive_hbar)
 
 bmr_app = pn.template.FastListTemplate(
     title=f"SlideRuleBMR: WHATIF ESTIMATOR",
@@ -614,6 +576,6 @@ bmr_app.sidebar.extend(md_tables)
 
 bmr_app.main.append(reactive_panel)
 bmr_app.sidebar.append(pn.Column(w_floatie))
-bmr_app.main.append(pn.Column(intro_floatie, sizing_mode="stretch_width"))
+bmr_app.sidebar.append(pn.Column(intro_floatie, sizing_mode="stretch_width"))
 
 bmr_app.servable()

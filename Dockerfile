@@ -1,8 +1,8 @@
 # Use the official Python image as the base image
-FROM python:3.10-slim
+FROM python:3.10.6-slim
 
 # Set environment variable to ensure Python output is unbuffered
-ENV PYTHONUNBUFFERED True
+ENV PYTHONUNBUFFERED 1
 
 # Set the working directory to /app
 WORKDIR /app

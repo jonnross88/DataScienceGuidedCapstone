@@ -35,3 +35,5 @@ __pycache__/
 data/
 models/
 images/
+Notebooks/
+raw_data/

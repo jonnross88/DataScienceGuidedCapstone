@@ -1,9 +1,10 @@
-# import os
 import pickle
 from urllib.request import urlopen
 from bokeh.models import NumeralTickFormatter
 import hvplot.pandas  # noqa
 import holoviews as hv
+import re
+
 
 import pandas as pd
 from panel import widgets as pnw
@@ -145,7 +146,7 @@ delta_fastQuads = pnw.IntSlider(
     name="Δ Fast Quads", start=-2, end=2, step=1, value=0, **widget_props
 )
 delta_SnowMaking_ac = pnw.IntSlider(
-    name="Δ Snow covered acreage", start=-5, end=5, step=1, value=0, **widget_props
+    name="Δ Snow cover", start=-5, end=5, step=1, value=0, **widget_props
 )
 delta_longest_run = pnw.FloatSlider(
     name="Δ Longest Run", start=-1.0, end=1.0, step=0.1, value=0.0, **widget_props
@@ -175,9 +176,22 @@ feature_dict = {
     "Runs": "Δ Number of Runs",
     "total_chairs": "Δ Total Chairs",
     "fastQuads": "Δ Fast Quads",
-    "Snow Making_ac": "Δ Snow covered acreage",
+    "Snow Making_ac": "Δ Snow cover",
     "LongestRun_mi": "Δ Longest Run",
 }
+
+feature_widgets = [
+    delta_fastQuads,
+    delta_runs,
+    delta_SnowMaking_ac,
+    vertical_drop,
+    delta_chairs,
+    delta_longest_run,
+]
+
+
+def get_widgets():
+    return feature_widgets  # + [n_guests, n_days, addl_cost_toggle, addl_cost]
 
 
 # define a function to output the impact of 1 feature change
@@ -216,10 +230,14 @@ def predicted_increase(
     return ticket_change
 
 
-# create a function to determine the color of the values based on the value of the ticket change
-# def ticket_color(ticket_change):
-#     """Returns the color of the ticket change value"""
-#     return neg_color if ticket_change < 0 else color3
+def custom_formatter(value):
+    return (
+        f'<span style="color: {neg_color}">{value}</span>'
+        if float(value) < 0
+        else f'<span style="color: {color3}">{value}</span>'
+    )
+
+
 # define function to output the revenue estimates
 def income_estimates(guests, days, ticket_change, expenses):
     new_price = base_price + ticket_change
@@ -242,31 +260,93 @@ def display_features(widgets, new_income):
     )
 
 
-def display_features_impacts(widgets, ticket_change):
-    """Returns a panel Markdown element of the chosen features values"""
+def display_features_impacts(widgets):
+    """Returns the data for the pie chart from the chosen features values"""
+    # value_color = neg_color if float(ticket_change) < 0 else color3
+
+    # Create a list of dictionaries containing data for each feature
+    data = []
+
+    for w in widgets:
+        feature_name = next(k for k, v in feature_dict.items() if v == w.name)
+        value = f"{w.value:.1f}" if isinstance(w.value, float) else w.value
+
+        isolated_impact = feature_impact(feature_name, float(w.value))
+        # percent_of_total = abs(isolated_impact) / (abs(ticket_change)+0.0000001)
+
+        feature_data = {
+            "Feature": w.name,
+            "Δ": value,
+            "Impact": round(isolated_impact, 2),
+            # '% of Total Impact': percent_of_total
+        }
+
+        data.append(feature_data)
+    impacts_df = pd.DataFrame(data)
+
+    total = abs(impacts_df["Impact"]).sum() + 0.00000001
+    impacts_df["Impact_frac"] = round(impacts_df["Impact"] / total, 2)
+    impacts_df["Impact_frac"] = impacts_df["Impact_frac"].apply(lambda x: f"{x:.0%}")
+
+    # set the significant figures for all the columns
+    # impacts_df["Impact"] = impacts_df["Impact"].apply(lambda x: f"{x:.2f}")
+    return impacts_df
+
+
+def stacked_bar(df, ticket_change):
+    """Returns a stacked bar chart of the feature impacts"""
+    # create a color column with the color minor color if the value is negative
+
     value_color = neg_color if ticket_change < 0 else color3
-    # get the widget_name, widget_value, feature_name from the widgets
-    features = [
-        (
-            w.name,
-            f"{w.value:.1f}" if isinstance(w.value, float) else w.value,
-            next(k for k, v in feature_dict.items() if v == w.name),
-            feature_impact(
-                next(k for k, v in feature_dict.items() if v == w.name), float(w.value)
-            ),
-        )
-        for w in widgets
-    ]
-    total_impact = sum(abs(f[3]) for f in features)
-    rows = "\n".join(
-        [
-            f"|{f[0]}|<span style='color: {value_color}'>{f[1]}</span>|${f[3]:.2f}|{abs(f[3])/(0.000001+total_impact):.0%}|"
-            for f in features
-        ]
+
+    dataframe = pd.DataFrame()
+    dataframe = df.copy()
+    dataframe["Impact_frac_num"] = (
+        dataframe["Impact_frac"].str.rstrip("%").astype(float)
     )
-    return pn.pane.Markdown(
-        f"{'|'.join(['Feature', 'Change', 'Isolated Impact', '% of Total Impact'])}\n|:--|---:|---:|---:|\n{rows}\n"
+    dataframe.loc[:, "color"] = color3
+    dataframe.loc[dataframe["Impact"] < 0, "color"] = neg_color
+
+    # create the stacked bar chart
+    bars = hv.Bars(
+        dataframe,
+        ["Feature"],
+        vdims=["Impact", "color"],
+    ).opts(
+        title="Features Impact on Ticket Price",
+        color="color",
+        xlabel="",
+        ylabel="",
+        tools=["hover"],
+        active_tools=["box_zoom"],
+        toolbar="above",
+        # xticks=4,
+        # ylim=(0, 220_000_000),
+        yformatter=NumeralTickFormatter(format="$ 0.0"),
+        stacked=True,
+        invert_axes=True,
+        # xlim=(-5, 5),
+        hooks=[hook],
+        fontsize={
+            "title": "16pt",
+            "labels": "12pt",
+            "xticks": "10pt",
+            "yticks": "10pt",
+        },
     )
+    return bars
+
+
+def feature_markdown(df, ticket_change):
+    """Returns a panel Markdown element of the dataframe"""
+    value_color = neg_color if ticket_change < 0 else color3
+    # convert the dataframe to a markdown table
+    table = df.to_markdown(index=False)
+    # use regular expressions to change the font color of the values only
+    table = re.sub(
+        r"(-?\d+\.\d+|-?\d+%?)", f"<font color='{value_color}'>\\1</font>", table
+    )
+    return pn.pane.Markdown(table)
 
 
 last_addl_cost = {"value": addl_cost.value}
@@ -398,6 +478,7 @@ def get_revenue_df(guests, days, ticket_change):
     return revenue_df
 
 
+# Revenue comparison bar chart``
 def hbar_callback(df):
     # create a color column with the color minor color if the value is negative
     dataframe = pd.DataFrame()
@@ -422,7 +503,7 @@ def hbar_callback(df):
         toolbar="above",
         xticks=4,
         # ylim=(0, 220_000_000),
-        xformatter=NumeralTickFormatter(format="$ 0 a"),
+        xformatter=NumeralTickFormatter(format="$ 0.0 a"),
         hooks=[hook],
         fontsize={
             "title": "16pt",
@@ -432,6 +513,7 @@ def hbar_callback(df):
         },
     )
     return bars
+
 
 # define the reset button and callback function
 def reset_features(event):
@@ -448,7 +530,7 @@ Features
 You can adjust the features of the ski resort, such as 
   - fast quads, 
   - number of runs, 
-  - snow covered acreage, and 
+  - snow cover, and 
   - vertical drop, 
   - total chairs, 
   - longest run. 
@@ -492,16 +574,6 @@ reactive_income_estimates = pn.bind(
     income_estimates, n_guests, n_days, reactive_predicted_increase, addl_cost
 )
 
-# reactive_color = pn.bind(ticket_color, reactive_predicted_increase)
-
-feature_widgets = [
-    delta_fastQuads,
-    delta_runs,
-    delta_SnowMaking_ac,
-    vertical_drop,
-    delta_chairs,
-    delta_longest_run,
-]
 
 default_values = {w.name: w.value for w in feature_widgets}
 estimator_widgets = [n_guests, n_days]
@@ -510,15 +582,23 @@ addl_cost_widgets = [addl_cost]
 
 # reactive features display
 reactive_features = pn.bind(
-    display_features_impacts, feature_widgets, reactive_predicted_increase
+    display_features_impacts,
+    feature_widgets,
 )
+# Feature Markdown table
+reactive_features_md = pn.bind(
+    feature_markdown, reactive_features, reactive_predicted_increase
+)
+# stacked bar
+reactive_stack = pn.bind(stacked_bar, reactive_features, reactive_predicted_increase)
+
+
 reactive_estimators = pn.bind(
     display_features, estimator_widgets, reactive_income_estimates
 )
 reactive_addl_cost = pn.bind(
     display_features, addl_cost_widgets, reactive_income_estimates
 )
-reactive_pie_chart = pn.bind(pie_chart_callback, feature_widgets)
 
 
 # bound the reactive function to the last year comparison function
@@ -543,18 +623,18 @@ features_table_md = pn.Column(
         ),
         width=300,
     ),
-    reactive_features,
-    width=300,
+    reactive_features_md,
+    # width=300,
 )
+
+
 estimates_table_md = pn.Column(
     pn.panel(pn.pane.Markdown("#### Estimates"), width=300),
     reactive_estimators,
-    width=300,
 )
 addl_cost_table_md = pn.Column(
     pn.panel(pn.pane.Markdown("#### Additional Cost"), width=300),
     reactive_addl_cost,
-    width=300,
 )
 
 
@@ -579,7 +659,6 @@ w_controls = [
     ),
     pn.Card(n_guests, n_days, title="Estimates"),
     pn.Card(addl_cost_toggle, addl_cost_text, addl_cost, title="Add'l Cost"),
-    pn.Card(reactive_pie_chart, title="Feature Impacts")
 ]
 # declare floating widget controls panel
 w_floatie = pn.layout.FloatPanel(
@@ -612,15 +691,6 @@ intro = pn.pane.HTML(
     <p>But first, close this window by clicking the <b>'X'</b> in the top right corner.</p>
     
     """
-    # Are you curious as to what an appropriate price increase for an exciting addition
-    # to **Big Mountain Resort** that you know customers will say yes for?
-    # Or, are you wondering about what adds little-to-no value to the ticket price,
-    # that which you can wipeout! Maybe both?
-    # If you said 'yes', 'no', or 'maybe', to any of those questions proceed and enjoy!
-    # At your fingertips, you are able to create some of your most curious what-if
-    # scenarios and see what impact they have on the ticket price using
-    # Machine Learning and the **Random Forest** algorithm built and trained specifically for
-    # Big Mountain Resort on its market competitors data.
 )
 
 intro_floatie = pn.layout.FloatPanel(
@@ -642,7 +712,12 @@ intro_floatie = pn.layout.FloatPanel(
 )
 intro_floatie.append(pn.Card(intro, hide_header=True, sizing_mode="stretch_width"))
 
-reactive_panel = pn.Column(main_info_icon, reactive_last_year_comparison, reactive_hbar)
+# lower panel
+reactive_panel = pn.Column(
+    main_info_icon,
+    reactive_last_year_comparison,
+    pn.Row(reactive_stack, reactive_hbar),
+)
 
 bmr_app = pn.template.FastListTemplate(
     title=f"SlideRuleBMR: WHATIF ESTIMATOR",
@@ -651,6 +726,7 @@ bmr_app = pn.template.FastListTemplate(
     accent_base_color=acc_color,
     neutral_color=acc_color,
     logo=logo_path,
+    sidebar_width=300,
 )
 
 
@@ -661,3 +737,5 @@ bmr_app.sidebar.append(pn.Column(w_floatie))
 bmr_app.sidebar.append(pn.Column(intro_floatie, sizing_mode="stretch_width"))
 
 bmr_app.servable()
+
+

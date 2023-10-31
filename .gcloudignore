@@ -4,3 +4,13 @@ dist
 node_modules
 vendor
 *.jar
+
+# Exclude Python bytecode.
+__pycache__/
+
+# exclude files in the data, models, and images directories
+data/
+models/
+images/
+Notebooks/
+raw_data/

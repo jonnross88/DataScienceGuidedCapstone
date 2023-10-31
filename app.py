@@ -1,17 +1,17 @@
 import pickle
 from urllib.request import urlopen
+import re
+
+import pandas as pd
+import numpy as np
+import panel as pn
+from panel import widgets as pnw
 from bokeh.models import NumeralTickFormatter
 import hvplot.pandas  # noqa
 import holoviews as hv
-import re
-
-
-import pandas as pd
-from panel import widgets as pnw
 
 from sklearn import __version__ as sklearn_version
 from sklearn.model_selection import cross_validate
-import panel as pn
 
 # throttle the panel widgets to prevent too many events
 pn.config.throttled = True
@@ -61,6 +61,9 @@ model_url = (
 )
 data_url = (
     "https://storage.googleapis.com/big_mountain_resort/ski_data_step3_features.csv"
+)
+logo_path = (
+    "https://storage.googleapis.com/big_mountain_resort/Big%20Mountain%20Resort.svg"
 )
 
 
@@ -123,7 +126,7 @@ def hook(plot, element):
     plot.handles["yaxis"].minor_tick_line_color = None
     plot.handles["xaxis"].axis_line_color = None
     plot.handles["yaxis"].axis_line_color = None
-
+    plot.state.xgrid.grid_line_color = None
 
 base_price, last_year_n_guests, last_year_n_days = 81, 350_000, 5
 last_year_revenue = base_price * last_year_n_guests * last_year_n_days
@@ -170,6 +173,9 @@ addl_cost = pnw.IntSlider(
 )
 addl_cost_text = pnw.StaticText(name="Additional Cost", value=f"${addl_cost.value:,}")
 
+# indicator object
+addl_cost_indicator = pn.pane.Markdown("")
+
 # dict to map the feature names to the widget display names
 feature_dict = {
     "vertical_drop": "Δ Vertical Drop",
@@ -190,8 +196,8 @@ feature_widgets = [
 ]
 
 
-def get_widgets():
-    return feature_widgets  # + [n_guests, n_days, addl_cost_toggle, addl_cost]
+# def get_widgets():
+#     return feature_widgets  # + [n_guests, n_days, addl_cost_toggle, addl_cost]
 
 
 # define a function to output the impact of 1 feature change
@@ -320,9 +326,10 @@ def stacked_bar(df, ticket_change):
         tools=["hover"],
         active_tools=["box_zoom"],
         toolbar="above",
+        show_grid=True,
         # xticks=4,
         # ylim=(0, 220_000_000),
-        yformatter=NumeralTickFormatter(format="$ 0.0"),
+        xformatter=NumeralTickFormatter(format="$ 0.0"),
         stacked=True,
         invert_axes=True,
         # xlim=(-5, 5),
@@ -333,8 +340,13 @@ def stacked_bar(df, ticket_change):
             "xticks": "10pt",
             "yticks": "10pt",
         },
+
     )
-    return bars
+    # create a horizontal line at y=0 for each feature
+    hlines = hv.Overlay([hv.HLine(0).opts(color=acc_color, line_width=0.1) for _ in dataframe['Feature'].unique()])
+
+
+    return bars* hlines
 
 
 def feature_markdown(df, ticket_change):
@@ -356,9 +368,11 @@ last_addl_cost = {"value": addl_cost.value}
 def expense_toggle_callback(event):
     if addl_cost_toggle.value:
         addl_cost.visible = True
+        addl_cost_indicator.object = "**Add'l cost is included in Estimated Δ Income**"
         addl_cost.value = last_addl_cost["value"]
     else:
         addl_cost.visible = False
+        addl_cost_indicator.object = ""
         last_addl_cost["value"] = addl_cost.value
         addl_cost.value = 0
 
@@ -450,6 +464,7 @@ def last_year_comparison(guests, days, ticket_change, expenses=0):
 
     # put each indicator on a card
     indicator_cards = [pn.Card(indicator, **card_opts) for indicator in indicators]
+    indicator_cards[3].append(obj=addl_cost_indicator)
     # add i subhead for every 3 indicators
     mixed_list = (
         [sub_heads[0]] + indicator_cards[:3] + [sub_heads[1]] + indicator_cards[3:]
@@ -503,7 +518,7 @@ def hbar_callback(df):
         toolbar="above",
         xticks=4,
         # ylim=(0, 220_000_000),
-        xformatter=NumeralTickFormatter(format="$ 0.0 a"),
+        xformatter=NumeralTickFormatter(format="$ 0 a"),
         hooks=[hook],
         fontsize={
             "title": "16pt",
@@ -641,7 +656,7 @@ addl_cost_table_md = pn.Column(
 # Kill any running servers before starting the new one
 pn.state.kill_all_servers()
 
-logo_path = "./Big Mountain Resort.svg"
+# logo_path = "./Big Mountain Resort.svg"
 
 md_tables = [features_table_md, estimates_table_md, addl_cost_table_md]
 
@@ -720,13 +735,14 @@ reactive_panel = pn.Column(
 )
 
 bmr_app = pn.template.FastListTemplate(
-    title=f"SlideRuleBMR: WHATIF ESTIMATOR",
+    title=f"SlideRuleBMR™: WHATIF ESTIMATOR",
     header_color=acc_color,
     header_background=color3,
     accent_base_color=acc_color,
     neutral_color=acc_color,
     logo=logo_path,
     sidebar_width=300,
+    favicon=logo_path,
 )
 
 
@@ -737,5 +753,3 @@ bmr_app.sidebar.append(pn.Column(w_floatie))
 bmr_app.sidebar.append(pn.Column(intro_floatie, sizing_mode="stretch_width"))
 
 bmr_app.servable()
-
-

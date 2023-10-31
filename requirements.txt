@@ -4,6 +4,7 @@ holoviews
 bokeh
 panel
 hvplot
+tabulate
 # jupyter-bokeh
 # matplotlib
 # ipykernel

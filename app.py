@@ -127,6 +127,8 @@ def hook(plot, element):
     plot.handles["xaxis"].axis_line_color = None
     plot.handles["yaxis"].axis_line_color = None
     plot.state.xgrid.grid_line_color = None
+    plot.state.toolbar.logo = None
+
 
 base_price, last_year_n_guests, last_year_n_days = 81, 350_000, 5
 last_year_revenue = base_price * last_year_n_guests * last_year_n_days
@@ -174,7 +176,7 @@ addl_cost = pnw.IntSlider(
 addl_cost_text = pnw.StaticText(name="Additional Cost", value=f"${addl_cost.value:,}")
 
 # indicator object
-addl_cost_indicator = pn.pane.Markdown("")
+addl_cost_md = pn.pane.Markdown("No Add'l cost included in Estimated Δ Income")
 
 # dict to map the feature names to the widget display names
 feature_dict = {
@@ -325,11 +327,11 @@ def stacked_bar(df, ticket_change):
         ylabel="",
         tools=["hover"],
         active_tools=["box_zoom"],
-        toolbar="above",
+        # toolbar="above",
         show_grid=True,
         # xticks=4,
         # ylim=(0, 220_000_000),
-        xformatter=NumeralTickFormatter(format="$ 0.0"),
+        xformatter=NumeralTickFormatter(format="$ 0.00"),
         stacked=True,
         invert_axes=True,
         # xlim=(-5, 5),
@@ -340,13 +342,16 @@ def stacked_bar(df, ticket_change):
             "xticks": "10pt",
             "yticks": "10pt",
         },
-
     )
     # create a horizontal line at y=0 for each feature
-    hlines = hv.Overlay([hv.HLine(0).opts(color=acc_color, line_width=0.1) for _ in dataframe['Feature'].unique()])
+    hlines = hv.Overlay(
+        [
+            hv.HLine(0).opts(color=acc_color, line_width=0.1)
+            for _ in dataframe["Feature"].unique()
+        ]
+    )
 
-
-    return bars* hlines
+    return bars * hlines
 
 
 def feature_markdown(df, ticket_change):
@@ -365,19 +370,20 @@ last_addl_cost = {"value": addl_cost.value}
 
 
 # use the expense toggle to show or hide the expense input
-def expense_toggle_callback(event):
+def addl_cost_toggle_callback(event):
     if addl_cost_toggle.value:
         addl_cost.visible = True
-        addl_cost_indicator.object = "**Add'l cost is included in Estimated Δ Income**"
+        addl_cost_text.visible = True
+
         addl_cost.value = last_addl_cost["value"]
     else:
         addl_cost.visible = False
-        addl_cost_indicator.object = ""
+        addl_cost_md.object = ""
         last_addl_cost["value"] = addl_cost.value
         addl_cost.value = 0
 
 
-addl_cost_toggle.param.watch(expense_toggle_callback, "value")
+addl_cost_toggle.param.watch(addl_cost_toggle_callback, "value")
 
 
 def static_text_callback(event):
@@ -388,7 +394,7 @@ addl_cost.param.watch(static_text_callback, "value")
 
 
 # create separate function for last year comparison
-def last_year_comparison(guests, days, ticket_change, expenses=0):
+def last_year_comparison(guests, days, ticket_change, expenses):
     """Returns a panel Markdown element of the predicted price and last year comparison"""
     new_price = base_price + ticket_change
     new_revenue = new_price * guests * days
@@ -464,7 +470,11 @@ def last_year_comparison(guests, days, ticket_change, expenses=0):
 
     # put each indicator on a card
     indicator_cards = [pn.Card(indicator, **card_opts) for indicator in indicators]
-    indicator_cards[3].append(obj=addl_cost_indicator)
+
+    indicator_cards[3].append(
+        obj=addl_cost_text
+    )  # add the add'l_cost_text although defined outside this function
+
     # add i subhead for every 3 indicators
     mixed_list = (
         [sub_heads[0]] + indicator_cards[:3] + [sub_heads[1]] + indicator_cards[3:]
@@ -515,7 +525,7 @@ def hbar_callback(df):
         invert_axes=True,
         tools=["hover"],
         active_tools=["box_zoom"],
-        toolbar="above",
+        # toolbar="above",
         xticks=4,
         # ylim=(0, 220_000_000),
         xformatter=NumeralTickFormatter(format="$ 0 a"),
@@ -590,6 +600,7 @@ reactive_income_estimates = pn.bind(
 )
 
 
+# default values for reset button
 default_values = {w.name: w.value for w in feature_widgets}
 estimator_widgets = [n_guests, n_days]
 addl_cost_widgets = [addl_cost]

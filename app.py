@@ -1,17 +1,16 @@
 import pickle
-from urllib.request import urlopen
 import re
+from urllib.request import urlopen
 
-import pandas as pd
-import numpy as np
-import panel as pn
-from panel import widgets as pnw
-from bokeh.models import NumeralTickFormatter
-import hvplot.pandas  # noqa
 import holoviews as hv
-
+import pandas as pd
+import panel as pn
+from bokeh.models import NumeralTickFormatter
+from panel import widgets as pnw
 from sklearn import __version__ as sklearn_version
 from sklearn.model_selection import cross_validate
+
+import hvplot.pandas  # noqa
 
 # throttle the panel widgets to prevent too many events
 pn.config.throttled = True
